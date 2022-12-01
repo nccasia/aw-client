@@ -109,10 +109,10 @@ class ActivityWatchClient:
 
         if self.localToken.get() is not None:
             self.auth()
-        
+        time.sleep(1) 
         
         if self.auth_status == "Success":
-            logger.info("logged in")
+            logger.info("AWC logged in")
             hostname = self.user_email[:self.user_email.index("@")]
 
             self.client_name = client_name
@@ -526,13 +526,33 @@ class RequestQueue(threading.Thread):
 
         try:
             self.client._post(request.endpoint, request.data)
-        except req.RequestException as e:
+        except req.exceptions.ConnectTimeout:
+            # Triggered by:
+            #   - server not running (connection refused)
+            #   - server not responding (timeout)
+            # Safe to retry according to requests docs:
+            #   https://requests.readthedocs.io/en/latest/api/#requests.ConnectTimeout
             self.connected = False
-            logger.warning(
-                "Failed to send request to aw-server, will queue requests until connection is available."
-            )
+            logger.warning("Connection refused or timeout, will queue requests until connection is available.")
+            time.sleep(1)
             return
-
+        except req.RequestException as e:
+            if e.response and e.response.status_code == 400:
+                # HTTP 400 - Bad request
+                # Example case: https://github.com/ActivityWatch/activitywatch/issues/815
+                # We don't want to retry, because a bad payload is likely to fail forever.
+                logger.error(f"Bad request, not retrying: {request.data}")
+            elif e.response and e.response.status_code == 500:
+                # HTTP 500 - Internal server error
+                # It is possible that the server is in a bad state (and will recover on restart),
+                # in which case we want to retry. I hope this can never caused by a bad payload.
+                logger.error(f"Internal server error, retrying: {request.data}")
+                time.sleep(1)
+                return
+            else:
+                logger.exception(f"Unknown error, not retrying: {request.data}")
+        except Exception:
+            logger.exception(f"Unknown error, not retrying: {request.data}")
         self._task_done()
 
     def run(self) -> None:
