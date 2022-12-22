@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
 logging.getLogger("requests").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+
 def _log_request_exception(e: req.RequestException):
     r = e.response
     logger.warning(str(e))
@@ -56,24 +57,29 @@ def always_raise_for_request_errors(f: Callable[..., req.Response]):
 
     return g
 
+
 def current_milli_time():
     return round(time.time() * 1000)
+
 
 def base64_encode(message):
     message_bytes = message.encode('ascii')
     base64_bytes = base64.b64encode(message_bytes)
     base64_message = base64_bytes.decode('ascii')
     return base64_message
-    
+
+
 def base64_decode(base64_message):
     base64_bytes = base64_message.encode('ascii')
     message_bytes = base64.b64decode(base64_bytes)
     message = message_bytes.decode('ascii')
     return message
 
+
 class ActivityWatchClient:
     auth_status = None
     localToken = LocalToken()
+
     def __init__(
         self,
         client_name: str = "unknown",
@@ -93,7 +99,7 @@ class ActivityWatchClient:
             :lines: 7-
         """
         self.testing = testing
-        
+
         _config = load_config()
 
         server_config = _config["server" if not testing else "server-testing"]
@@ -109,8 +115,8 @@ class ActivityWatchClient:
 
         if self.localToken.get() is not None:
             self.auth()
-        time.sleep(1) 
-        
+        time.sleep(1)
+
         if self.auth_status == "Success":
             logger.info("AWC logged in")
             hostname = self.user_email[:self.user_email.index("@")]
@@ -162,7 +168,8 @@ class ActivityWatchClient:
 
     @always_raise_for_request_errors
     def _delete(self, endpoint: str, data: Any = dict()) -> req.Response:
-        headers = {"Content-type": "application/json", "secret": base64_encode(f"{current_milli_time()}")}
+        headers = {"Content-type": "application/json",
+                   "secret": base64_encode(f"{current_milli_time()}")}
         return req.delete(self._url(endpoint), data=json.dumps(data), headers=headers)
 
     def get_info(self):
@@ -533,7 +540,8 @@ class RequestQueue(threading.Thread):
             # Safe to retry according to requests docs:
             #   https://requests.readthedocs.io/en/latest/api/#requests.ConnectTimeout
             self.connected = False
-            logger.warning("Connection refused or timeout, will queue requests until connection is available.")
+            logger.warning(
+                "Connection refused or timeout, will queue requests until connection is available.")
             time.sleep(1)
             return
         except req.RequestException as e:
@@ -546,13 +554,16 @@ class RequestQueue(threading.Thread):
                 # HTTP 500 - Internal server error
                 # It is possible that the server is in a bad state (and will recover on restart),
                 # in which case we want to retry. I hope this can never caused by a bad payload.
-                logger.error(f"Internal server error, retrying: {request.data}")
+                logger.error(
+                    f"Internal server error, retrying: {request.data}")
                 time.sleep(1)
                 return
             else:
-                logger.exception(f"Unknown error, not retrying: {request.data}")
-        except Exception:
-            logger.exception(f"Unknown error, not retrying: {request.data}")
+                logger.exception(
+                    f"Unknown RequestException: {e}, not retrying: {request.data}")
+        except Exception as e:
+            logger.exception(
+                f"Unknown error: {e}, not retrying: {request.data}")
         self._task_done()
 
     def run(self) -> None:
